@@ -1,0 +1,224 @@
+import os
+from openai import OpenAI
+from evidently.report import Report
+from evidently.metric_preset import DataDriftPreset
+import pandas as pd
+import streamlit as st
+import torch
+from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer
+
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+import seaborn as sns
+
+
+_model = None
+_tokenizer = None
+
+def load_model_and_tokenizer():
+    """
+    Load and cache the model and tokenizer.
+    """
+    global _model, _tokenizer
+    if _model is None or _tokenizer is None:
+        print("Loading model and tokenizer...")
+        model_path = "/Users/apple/Documents/Priyesh/Pretrained-Models/all-mpnet-base-v2"
+        _tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
+        _model = AutoModel.from_pretrained(model_path, local_files_only=True)
+        _model.eval()
+    return _tokenizer, _model
+
+
+def get_embedding(text, tokenizer, model):
+    """
+    Generate embedding for a single text input.
+    """
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    embedding = outputs.last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
+    return embedding
+
+
+def save_report(self, output_path: str):
+        if self.report:
+            self.report.save_html(output_path)
+
+
+def display_html_report(report_path):
+        """
+        Display the HTML report in Streamlit.
+        
+        Args:
+            report_path (str): Path to the HTML report.
+        """
+        with open(report_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        st.components.v1.html(html_content, height=800, scrolling=True)
+
+
+class DriftDetector:
+    def detect_tabular_drift(self, reference_data: pd.DataFrame, synthetic_data: pd.DataFrame) -> Report:
+        self.report = Report(metrics=[DataDriftPreset()])
+        self.report.run(reference_data=reference_data, current_data=synthetic_data)
+        return self.report
+
+
+    def generate_embeddings(self, reference_data, current_data, text_column) -> str:
+        """
+        Generates an embedding drift report between two datasets using AutoTokenizer and AutoModel.
+        
+        Args:
+            reference_data (pd.DataFrame): The reference dataset containing text data.
+            current_data (pd.DataFrame): The current dataset containing text data.
+            text_column (str): The column name containing the text data.
+            
+        Returns:
+            return the reference and current data embeddings
+        """
+
+        if text_column not in reference_data.columns or text_column not in current_data.columns:
+            raise ValueError(f"Column '{text_column}' not found in one or both datasets.")
+        
+        tokenizer, model = load_model_and_tokenizer()
+        model.eval()
+        
+        # Generate embeddings for reference and current data
+        reference_data['embeddings'] = reference_data[text_column].apply(get_embedding, 
+                                                                         tokenizer=tokenizer, 
+                                                                         model=model)
+        
+        current_data['embeddings'] = current_data[text_column].apply(get_embedding, 
+                                                                     tokenizer=tokenizer, 
+                                                                     model=model)
+
+        return reference_data, current_data
+    
+
+
+    def get_textual_data_drift_preset_report(self, embedded_reference_data, embedded_current_data):
+        reference_embeddings = pd.DataFrame(embedded_reference_data['embeddings'].tolist(), columns=[f"dim_{i}" for i in range(len(embedded_reference_data['embeddings'][0]))])
+        current_embeddings = pd.DataFrame(embedded_current_data['embeddings'].tolist(), columns=[f"dim_{i}" for i in range(len(embedded_current_data['embeddings'][0]))])
+
+        textual_data_drift_preset_report = Report(metrics=[
+            DataDriftPreset()
+        ])
+        
+        textual_data_drift_preset_report.run(
+            reference_data=reference_embeddings,
+            current_data=current_embeddings
+        )
+        
+        textual_data_drift_preset_report_path = "./outputs/drift_reports/textual_data/textual_data_drift_preset_report.html"
+        textual_data_drift_preset_report.save_html(textual_data_drift_preset_report_path)
+        
+        return textual_data_drift_preset_report_path
+
+
+
+    def get_textual_data_embeddings_countour_plots(self, embedded_reference_data, embedded_current_data):
+        """
+        Generates 3 subplots for embedding contour plots:
+        1. Reference Data
+        2. Current Data
+        3. Overlapping Reference and Current Data
+        
+        Args:
+            embedded_reference_data (pd.DataFrame): DataFrame with reference embeddings.
+            embedded_current_data (pd.DataFrame): DataFrame with current embeddings.
+            
+        Returns:
+            str: Path to the saved subplot image.
+        """
+        # Prepare Embeddings DataFrames
+        reference_embeddings = pd.DataFrame(embedded_reference_data['embeddings'].tolist())
+        current_embeddings = pd.DataFrame(embedded_current_data['embeddings'].tolist())
+        
+        reference_embeddings['dataset'] = 'Reference'
+        current_embeddings['dataset'] = 'Current'
+        
+        combined_embeddings = pd.concat([reference_embeddings, current_embeddings], ignore_index=True)
+        labels = combined_embeddings['dataset']
+        combined_embeddings = combined_embeddings.drop(columns=['dataset'])
+        
+        # Dimensionality Reduction using t-SNE
+        print("Performing dimensionality reduction using t-SNE...")
+        tsne = TSNE(n_components=2, random_state=42)
+        reduced_embeddings = tsne.fit_transform(combined_embeddings)
+        
+        reduced_df = pd.DataFrame(reduced_embeddings, columns=['dim1', 'dim2'])
+        reduced_df['dataset'] = labels.values
+        
+        # Create Subplots
+        fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+        
+        # Plot 1: Reference Data
+        sns.kdeplot(
+            data=reduced_df[reduced_df['dataset'] == 'Reference'],
+            x='dim1', y='dim2',
+            fill=True,
+            alpha=0.5,
+            color='skyblue',
+            ax=axs[0]
+        )
+        axs[0].set_title('Reference Data Embedding Contour')
+        axs[0].set_xlabel('Dimension 1')
+        axs[0].set_ylabel('Dimension 2')
+        
+        # Plot 2: Current Data
+        sns.kdeplot(
+            data=reduced_df[reduced_df['dataset'] == 'Current'],
+            x='dim1', y='dim2',
+            fill=True,
+            alpha=0.5,
+            color='salmon',
+            ax=axs[1]
+        )
+        axs[1].set_title('Current Data Embedding Contour')
+        axs[1].set_xlabel('Dimension 1')
+        axs[1].set_ylabel('Dimension 2')
+        
+        # Plot 3: Overlapping Contour
+        sns.kdeplot(
+            data=reduced_df,
+            x='dim1', y='dim2',
+            hue='dataset',
+            fill=True,
+            alpha=0.5,
+            palette=['skyblue', 'salmon'],
+            ax=axs[2]
+        )
+        axs[2].set_title('Overlap: Reference & Current Data')
+        axs[2].set_xlabel('Dimension 1')
+        axs[2].set_ylabel('Dimension 2')
+        axs[2].legend(title='Dataset')
+        
+        # Adjust Layout and Save Plot
+        plt.tight_layout()
+        textual_data_embeddings_contour_plots_path = './outputs/drift_reports/textual_data/textual_data_embeddings_contour_plots.png'
+        plt.savefig(textual_data_embeddings_contour_plots_path)
+        plt.close()
+        
+        print(f"Embedding contour plots saved at: {textual_data_embeddings_contour_plots_path}")
+        return textual_data_embeddings_contour_plots_path
+    
+
+
+    def textual_data_drift_reports(self, reference_data, current_data, text_column):
+        embedded_reference_data, embedded_current_data = self.generate_embeddings(reference_data,
+                                                                                  current_data,
+                                                                                  text_column)
+        
+        textual_data_drift_preset_report_path = self.get_textual_data_drift_preset_report(embedded_reference_data,
+                                                                                          embedded_current_data)
+        textual_data_embeddings_countour_plots_path = self.get_textual_data_embeddings_countour_plots(embedded_reference_data,
+                                                                                                      embedded_current_data)
+        
+        return textual_data_drift_preset_report_path, textual_data_embeddings_countour_plots_path
+        
+
+        
+
+
+
