@@ -11,6 +11,9 @@ from sentence_transformers import SentenceTransformer
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 import seaborn as sns
+from evidently import ColumnMapping
+from evidently.metrics import EmbeddingsDriftMetric
+from evidently.metrics.data_drift.embedding_drift_methods import (distance, mmd, model, ratio)
 
 
 _model = None
@@ -68,6 +71,7 @@ class DriftDetector:
     def generate_embeddings(self, reference_data, current_data, text_column) -> str:
         """
         Generates an embedding drift report between two datasets using AutoTokenizer and AutoModel.
+        Uses all-mpnet-base-2 model
         
         Args:
             reference_data (pd.DataFrame): The reference dataset containing text data.
@@ -96,7 +100,6 @@ class DriftDetector:
         return reference_data, current_data
     
 
-
     def get_textual_data_drift_preset_report(self, embedded_reference_data, embedded_current_data):
         reference_embeddings = pd.DataFrame(embedded_reference_data['embeddings'].tolist(), columns=[f"dim_{i}" for i in range(len(embedded_reference_data['embeddings'][0]))])
         current_embeddings = pd.DataFrame(embedded_current_data['embeddings'].tolist(), columns=[f"dim_{i}" for i in range(len(embedded_current_data['embeddings'][0]))])
@@ -114,7 +117,6 @@ class DriftDetector:
         textual_data_drift_preset_report.save_html(textual_data_drift_preset_report_path)
         
         return textual_data_drift_preset_report_path
-
 
 
     def get_textual_data_embeddings_countour_plots(self, embedded_reference_data, embedded_current_data):
@@ -204,6 +206,37 @@ class DriftDetector:
         return textual_data_embeddings_contour_plots_path
     
 
+    def get_embeddings_drift_reports(self, embedded_reference_data, embedded_current_data):
+        ref_embeddings = embedded_reference_data['embeddings'].to_list()
+        curr_embeddings = embedded_current_data['embeddings'].to_list() 
+
+        ref_embeddings_df = pd.DataFrame(ref_embeddings)
+        ref_embeddings_df.columns = ['col_' + str(x) for x in ref_embeddings_df.columns]
+
+        curr_embeddings_df = pd.DataFrame(curr_embeddings)
+        curr_embeddings_df.columns = ['col_' + str(x) for x in curr_embeddings_df.columns]
+
+        column_mapping = ColumnMapping(embeddings={'Synthetic Data Generation' : ref_embeddings_df.columns})
+
+        embedding_drif_mmd_report = Report(metrics= [
+            EmbeddingsDriftMetric('Synthetic Data Generation',
+                                drift_method=mmd(
+                                        threshold = 0.5,
+                                        bootstrap = False,
+                                        quantile_probability = 0.5,
+                                        pca_components=None
+                                ))
+        ])
+
+        embedding_drif_mmd_report.run(reference_data=ref_embeddings_df,
+                                    current_data=curr_embeddings_df,
+                                    column_mapping=column_mapping)
+        
+        textual_embeddings_drift_mmd_report_path = "./outputs/drift_reports/textual_data/textual_embeddings_drift_mmd_report.html"
+        embedding_drif_mmd_report.save_html(textual_embeddings_drift_mmd_report_path)
+    
+        return textual_embeddings_drift_mmd_report_path
+
 
     def textual_data_drift_reports(self, reference_data, current_data, text_column):
         embedded_reference_data, embedded_current_data = self.generate_embeddings(reference_data,
@@ -214,8 +247,12 @@ class DriftDetector:
                                                                                           embedded_current_data)
         textual_data_embeddings_countour_plots_path = self.get_textual_data_embeddings_countour_plots(embedded_reference_data,
                                                                                                       embedded_current_data)
+        textual_embeddings_drift_mmd_report_path = self.get_embeddings_drift_reports(embedded_reference_data,
+                                                                                    embedded_current_data)
         
-        return textual_data_drift_preset_report_path, textual_data_embeddings_countour_plots_path
+        return textual_data_drift_preset_report_path, \
+                textual_data_embeddings_countour_plots_path, \
+                textual_embeddings_drift_mmd_report_path
         
 
         

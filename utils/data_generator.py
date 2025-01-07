@@ -28,3 +28,6 @@ class SyntheticDataGenerator:
         ])
         synthetic_texts = response.choices[0].message.content.split("\n")
         return synthetic_texts
+    
+
+    
