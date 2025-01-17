@@ -253,6 +253,48 @@ class DriftDetector:
         return textual_data_drift_preset_report_path, \
                 textual_data_embeddings_countour_plots_path, \
                 textual_embeddings_drift_mmd_report_path
+    
+
+    def show_info():
+        st.markdown(f"<h5 style='text-align: center;'> Graph Interpretations </h5>", unsafe_allow_html=True)
+        st.success('''The graphs in the report compare the Reference Distribution (historical or baseline data) with the Current Distribution (new incoming data) for each feature or column. Each pair of histograms visualizes how data is distributed across different bins or categories. When the distributions are visually aligned, it suggests stability in the feature’s behavior over time. However, noticeable differences—such as shifts in peaks, spread, or gaps—indicate potential data drift. The statistical tests (e.g., K-S test for numerical data and Chi-Square test for categorical data) provide quantitative validation of these visual observations. The drift score and p-values further indicate whether the drift is statistically significant.''')
+        st.warning('''
+                    Key Observations to look For:
+                    •	Alignment of Bars: If the bars in the reference and current distributions overlap closely, drift is unlikely.
+                    •	Shift in Peaks: Changes in the central tendency or concentration of data suggest drift.
+                    •	Spread and Shape: Variations in data spread or the overall shape of distributions signal potential drift.
+                    •	Statistical Significance:
+                    •	High p-value (>0.05): No significant drift detected.
+                    •	Low p-value (<0.05): Significant drift detected.
+                    •	Drift Score: A higher drift score indicates greater deviation from the reference distribution.
+        ''')
+        st.markdown(f"<h5 style='text-align: center;'> Statistical Tests Used </h5>", unsafe_allow_html=True)
+        st.error('''
+                Kolmogorov-Smirnov (K-S) Test:
+                    •	The K-S test compares the cumulative distributions of two datasets (reference vs. current).
+                    •	It measures the maximum difference between their cumulative distribution functions (CDFs).
+                    •	A high p-value (e.g., > 0.05) suggests no significant drift, while a low p-value indicates data drift.
+                    •	In the plots, significant visual shifts between the two distributions suggest drift, aligning with the statistical results.
+
+                Chi-Square Test:
+                    •	The Chi-Square test compares the frequency distributions of categorical data or discretized numeric data.
+                    •	It evaluates whether the observed frequencies in the current dataset deviate significantly from the expected frequencies (reference dataset).
+                    •	A low p-value (e.g., < 0.05) suggests significant drift in categorical distributions.
+                    •	Large visual differences in the histogram bars between reference and current indicate drift.
+
+                Population Stability Index (PSI):
+                    •	PSI quantifies the shift in distributions between reference and current datasets.
+                    •	A PSI score < 0.1 indicates no significant drift, 0.1–0.25 indicates moderate drift, and > 0.25 suggests significant drift.
+                    •	While PSI isn’t explicitly shown in this report, it is often used alongside these methods to provide an additional measure of drift.
+        ''')
+
+        synthetic_data_csv = st.session_state.synthetic_data.to_csv(index=False)  
+        st.download_button(
+            label="Download Synthetic Data",
+            data=synthetic_data_csv,
+            file_name="synthetic_data.csv",
+            mime="text/csv"
+        )
         
 
         
