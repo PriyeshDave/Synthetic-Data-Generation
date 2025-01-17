@@ -17,18 +17,9 @@ class SyntheticDataGenerator:
                     Generate {num_rows} rows of synthetic data in CSV format based on the following schema:
                     {reference_data.head().to_string(index=False)}
 
-                    Please provide the output in the following CSV format:
-
-                    START_CSV
-                    ID,Name,Age,Department,Salary,Date_of_Joining
-                    6,Anna Lang,32,Marketing,68000,2020-01-10
-                    7,Liam Jones,35,Engineering,75000,2016-05-07
-                    8,Julia Clark,27,HR,62000,2021-03-15
-                    9,Ethan Lopez,38,Engineering,81000,2018-08-25
-                    10,Olivia Garcia,34,Marketing,69000,2019-09-02
-                    END_CSV
+                    Please provide the output in the following CSV format such that there is START_CSV placeholder before the data and END_CSV placegolder after the data.
+                    Also the csv data you provide, make sure it has the same column names as the columns in {reference_data}
                 """
-        
 
         client = OpenAI(api_key=self.api_key)
         response = client.chat.completions.create(
@@ -40,17 +31,11 @@ class SyntheticDataGenerator:
         )
         synthetic_data_text = response.choices[0].message.content
         st.write(synthetic_data_text)
-
-        # Extract the CSV content between START_CSV and END_CSV
         start_index = synthetic_data_text.find("START_CSV") + len("START_CSV")
         end_index = synthetic_data_text.find("END_CSV")
         csv_data = synthetic_data_text[start_index:end_index].strip()
-
-        # Clean up the CSV data if needed (optional)
         csv_data = "\n".join([line.strip() for line in csv_data.split("\n") if line.strip()])
-        # Replace double spaces with commas (if needed for proper CSV formatting)
         csv_data = csv_data.replace('  ', ',')
-        # Parse the CSV data into a DataFrame
         synthetic_data = pd.read_csv(StringIO(csv_data))
         return synthetic_data
     

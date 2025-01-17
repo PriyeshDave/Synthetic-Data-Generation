@@ -1,0 +1,11 @@
+employeeName,assetId,assetName,allocationDate,assetValue,assetType
+Alice,mac002,iPad Pro,05/15/2024,185000.32,tablet
+Bob,mac003,Lenovo ThinkPad,08/20/2024,167500.75,laptop
+Charlie,mac004,Dell XPS 13,10/10/2024,145000.88,laptop
+David,mac005,HP Spectre x360,03/28/2024,178999.21,laptop
+Eve,mac006,Google Pixelbook,07/07/2024,156700.45,laptop
+Frank,mac007,Microsoft Surface Pro 7,11/30/2024,194500.13,tablet
+Grace,mac008,Asus ZenBook,02/14/2024,125800.67,laptop
+Henry,mac009,Acer Chromebook,06/25/2024,133300.99,laptop
+Ivy,mac010,Samsung Galaxy Tab S7,09/19/2024,199999.94,tablet
+Jack,mac011,MacBook Pro,04/03/2024,177600.44,laptop

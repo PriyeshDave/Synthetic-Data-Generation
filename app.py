@@ -6,6 +6,7 @@ import time
 from utils.data_generator import SyntheticDataGenerator
 from utils.drift_detector import DriftDetector, display_html_report
 from utils.data_generator_using_meta_info import DataGenerationUsingMetaInfo
+from utils.data_analyzer import DataAnalyzer
 
 
 # API Key Configuration
@@ -14,6 +15,7 @@ OPENAI_API_KEY = st.secrets['api_keys']["OPENAI_API_KEY"]
 # Initialize Classes
 data_gen = SyntheticDataGenerator(api_key=OPENAI_API_KEY)
 drift_detector = DriftDetector()
+new_flag = False
 
 # Streamlit UI
 st.title("Synthetic Data Generation App")
@@ -22,10 +24,23 @@ st.title("Synthetic Data Generation App")
 tab1, tab2 = st.tabs(["Reference Data Input", "Metadata Input"])
 
 # Initialize session state variables if they do not exist
-if "synthetic_data" not in st.session_state:
+if 'statistical_summary_checkbox' not in st.session_state:
+    st.session_state.statistical_summary_checkbox = False
+
+if 'synthetic_data_generation_checkbox' not in st.session_state:
+    st.session_state.synthetic_data_generation_checkbox = False
+
+if 'synthetic_data_generated' not in st.session_state:
+    st.session_state.synthetic_data_generated = False
+
+if 'synthetic_data' not in st.session_state:
     st.session_state.synthetic_data = None
+
 if "synthetic_texts" not in st.session_state:
     st.session_state.synthetic_texts = None
+
+if 'drift_detection_run' not in st.session_state:
+    st.session_state.drift_detection_run = False
 
 ########################################################## SCENARIO 1: REFERENCE DATA INPUT ##########################################################
 with tab1:
@@ -34,57 +49,109 @@ with tab1:
 
     if data_type == "Tabular":
         uploaded_file = st.file_uploader("Upload Reference CSV", type=["csv"])
+
         if uploaded_file:
-            # Display the uploaded file preview
             reference_data = pd.read_csv(uploaded_file)
             st.write("Reference Data Preview:", reference_data.head(10))
-            num_rows = st.number_input("Number of Synthetic Rows", min_value=1, value=500)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.checkbox('See the statistical summary of the uploaded data', key="stat_summary_checkbox"):
+                    st.session_state.statistical_summary_checkbox = True
+                    st.session_state.synthetic_data_generation_checkbox = False  
 
-            # Button to trigger synthetic data generation
-            if st.button("Generate Synthetic Tabular Data"):
-                # Show a progress bar while generating the data
-                progress = st.progress(0)
-                with st.spinner("Generating synthetic data..."):
-                    for i in range(100):  # Simulate progress increment
-                        time.sleep(0.02)  # Simulate some delay
-                        progress.progress(i + 1)
-                    
-                    # Generate synthetic data after the simulated progress
+            with col2:
+                if st.checkbox('Generate the synthetic data', key="synthetic_data_checkbox"):
+                    st.session_state.synthetic_data_generation_checkbox = True
+                    st.session_state.statistical_summary_checkbox = False
+
+            # CLEAR SESSION BUTTON
+            if st.button("Clear State"):
+                st.session_state.statistical_summary_checkbox = False
+                st.session_state.synthetic_data_generation_checkbox = False
+                st.session_state.synthetic_data = None
+                st.session_state.synthetic_data_generated = False
+                st.session_state.drift_detection_run = False
+                st.experimental_rerun()
+
+            # STATISTICAL SUMMARY CHECKBOX
+            if st.session_state.statistical_summary_checkbox:
+                st.subheader("Statistical Summary of the Data")
+                data_analyzer = DataAnalyzer(api_key=OPENAI_API_KEY)
+                data_analyzer.show_plots_and_insights(reference_data)
+
+            # SYNTHETIC DATA GENERATION CHECKBOX
+            if st.session_state.synthetic_data_generation_checkbox and not st.session_state.synthetic_data_generated:
+                st.subheader("Synthetic Data Generation")
+                num_rows = st.number_input("Number of Synthetic Rows", min_value=1, value=500)
+                if st.button("Generate Synthetic Tabular Data"):
+                    with st.spinner("Generating synthetic data..."):
+                        progress = st.progress(0)
+                        for i in range(100):  
+                            time.sleep(0.02) 
+                            progress.progress(i + 1)
                     st.session_state.synthetic_data = data_gen.generate_tabular_data(reference_data, num_rows)
-                
-                st.write("Synthetic Data Preview:", st.session_state.synthetic_data.head(10))
+                    st.session_state.synthetic_data_generated = True
+                    st.success("Synthetic Data Generated Successfully!")
+                    st.write("Synthetic Data Preview:", st.session_state.synthetic_data.head(10))
+                    st.session_state.drift_detection_run = False
 
+            # SYNTHETIC DATA GOT GENERATED
+            if st.session_state.synthetic_data_generated and st.session_state.synthetic_data is not None:
+                st.subheader("Synthetic Data Insights")
+                data_analyzer = DataAnalyzer(api_key=OPENAI_API_KEY)
+                data_analyzer.show_plots_and_insights(st.session_state.synthetic_data)
 
-            if st.session_state.synthetic_data is not None:
-                # Button to trigger drift detection
-                if st.button("Run Drift Detection"):
-                    # Show a progress bar while running drift detection
-                    drift_progress = st.progress(0)
+                # SEE THE DRIFT IN THE SYNTHETIC DATA
+                if st.button("Run Drift Detection") and not st.session_state.drift_detection_run:
+                    st.session_state.drift_detection_run = True
                     with st.spinner("Running drift detection..."):
-                        for i in range(100):  # Simulate progress increment
-                            time.sleep(0.02)  # Simulate some delay
+                        drift_progress = st.progress(0)
+                        for i in range(100):  
+                            time.sleep(0.02)
                             drift_progress.progress(i + 1)
-                        
-                        # Perform drift detection after the simulated progress
-                        tabular_data_drift_report = drift_detector.detect_tabular_drift(reference_data, st.session_state.synthetic_data)
+                        tabular_data_drift_report = drift_detector.detect_tabular_drift(reference_data, 
+                                                                                        st.session_state.synthetic_data)
                         tabular_data_drift_report_plot = tabular_data_drift_report.get_html()
                     
                     if tabular_data_drift_report_plot:
                         st.success("Drift Detection Report Generated!")
                         st.markdown(f"<h3 style='text-align: center;'> Data Drift Report </h3>", unsafe_allow_html=True)
-                        st.components.v1.html(tabular_data_drift_report_plot, height=2000)
+                        st.components.v1.html(tabular_data_drift_report_plot, height=3000)
                         st.divider()
 
-                        # Adding a download button for the generated drift report
-                        with open("tabular_drift_report.html", "w") as file:
-                            file.write(tabular_data_drift_report_plot)
-                        
-                        st.download_button(
-                            label="Download Drift Detection Report",
-                            data=open("tabular_drift_report.html", "rb"),
-                            file_name="tabular_drift_report.html",
-                            mime="text/html"
-                        )
+                        st.markdown(f"<h5 style='text-align: center;'> Graph Interpretations </h5>", unsafe_allow_html=True)
+                        st.success('''The graphs in the report compare the Reference Distribution (historical or baseline data) with the Current Distribution (new incoming data) for each feature or column. Each pair of histograms visualizes how data is distributed across different bins or categories. When the distributions are visually aligned, it suggests stability in the feature’s behavior over time. However, noticeable differences—such as shifts in peaks, spread, or gaps—indicate potential data drift. The statistical tests (e.g., K-S test for numerical data and Chi-Square test for categorical data) provide quantitative validation of these visual observations. The drift score and p-values further indicate whether the drift is statistically significant.''')
+                        st.warning('''
+                                    Key Observations to look For:
+                                    •	Alignment of Bars: If the bars in the reference and current distributions overlap closely, drift is unlikely.
+                                    •	Shift in Peaks: Changes in the central tendency or concentration of data suggest drift.
+                                    •	Spread and Shape: Variations in data spread or the overall shape of distributions signal potential drift.
+                                    •	Statistical Significance:
+                                    •	High p-value (>0.05): No significant drift detected.
+                                    •	Low p-value (<0.05): Significant drift detected.
+                                    •	Drift Score: A higher drift score indicates greater deviation from the reference distribution.
+                        ''')
+                        st.markdown(f"<h5 style='text-align: center;'> Statistical Tests Used </h5>", unsafe_allow_html=True)
+                        st.error('''
+                                Kolmogorov-Smirnov (K-S) Test:
+                                    •	The K-S test compares the cumulative distributions of two datasets (reference vs. current).
+                                    •	It measures the maximum difference between their cumulative distribution functions (CDFs).
+                                    •	A high p-value (e.g., > 0.05) suggests no significant drift, while a low p-value indicates data drift.
+                                    •	In the plots, significant visual shifts between the two distributions suggest drift, aligning with the statistical results.
+
+                                Chi-Square Test:
+                                    •	The Chi-Square test compares the frequency distributions of categorical data or discretized numeric data.
+                                    •	It evaluates whether the observed frequencies in the current dataset deviate significantly from the expected frequencies (reference dataset).
+                                    •	A low p-value (e.g., < 0.05) suggests significant drift in categorical distributions.
+                                    •	Large visual differences in the histogram bars between reference and current indicate drift.
+
+                                Population Stability Index (PSI):
+                                    •	PSI quantifies the shift in distributions between reference and current datasets.
+                                    •	A PSI score < 0.1 indicates no significant drift, 0.1–0.25 indicates moderate drift, and > 0.25 suggests significant drift.
+                                    •	While PSI isn’t explicitly shown in this report, it is often used alongside these methods to provide an additional measure of drift.
+                        ''')
+
                         synthetic_data_csv = st.session_state.synthetic_data.to_csv(index=False)  
                         st.download_button(
                             label="Download Synthetic Data",
@@ -93,114 +160,220 @@ with tab1:
                             mime="text/csv"
                         )
 
-                
+    # if data_type == "Tabular":
+    #     if 'statistical_summary_checkbox' not in st.session_state:
+    #         st.session_state.statistical_summary_checkbox = False
+
+    #     if 'synthetic_data_generation_checkbox' not in st.session_state:
+    #         st.session_state.synthetic_data_generation_checkbox = False
+
+    #     uploaded_file = st.file_uploader("Upload Reference CSV", type=["csv"])
+
+    #     if uploaded_file:
+    #         reference_data = pd.read_csv(uploaded_file)
+    #         st.write("Reference Data Preview:", reference_data.head(10))
+    #         col1, col2 = st.columns(2)
+    #         with col1:
+    #             if st.checkbox('See the statistical summary of the uploaded data', key="stat_summary_checkbox"):
+    #                 st.session_state.statistical_summary_checkbox = True
+    #                 st.session_state.synthetic_data_generation_checkbox = False  
+
+    #         with col2:
+    #             if st.checkbox('Generate the synthetic data', key="synthetic_data_checkbox"):
+    #                 st.session_state.synthetic_data_generation_checkbox = True
+    #                 st.session_state.statistical_summary_checkbox = False
+
+
+    #         # CLEAR SESSION BUTTON
+    #         if st.button("Clear State"):
+    #             st.session_state.statistical_summary_checkbox = False
+    #             st.session_state.synthetic_data_generation_checkbox = False
+    #             st.session_state.synthetic_data = None
+    #             st.experimental_rerun()
+
+
+    #         # STATISTICAL SUMMARY CHECKBOX
+    #         if st.session_state.statistical_summary_checkbox:
+    #             st.subheader("Statistical Summary of the Data")
+    #             data_analyzer = DataAnalyzer(api_key=OPENAI_API_KEY)
+    #             data_analyzer.show_plots_and_insights(reference_data)
+
+
+    #         # SYNTHETIC DATA GENERATION CHECKBOX
+    #         if st.session_state.synthetic_data_generation_checkbox:
+    #             print('@@@@@@@ here @@@@@@@@ ')
+    #             st.subheader("Synthetic Data Generation")
+    #             num_rows = st.number_input("Number of Synthetic Rows", min_value=1, value=500)
+    #             if st.button("Generate Synthetic Tabular Data"):
+    #                 progress = st.progress(0)
+    #                 with st.spinner("Generating synthetic data..."):
+    #                     for i in range(100):  
+    #                         time.sleep(0.02) 
+    #                         progress.progress(i + 1)
+    #                 st.session_state.synthetic_data = data_gen.generate_tabular_data(reference_data, 
+    #                                                                                          num_rows)
+    #                 st.write("Synthetic Data Preview:", st.session_state.synthetic_data.head(10))
+
+
+    #             # SYNTHETIC DATA GOT GENERATED
+    #             if st.session_state.synthetic_data is not None:
+                    
+    #                 # PLOTS AND INSIGHTS ON THE SYNTHETIC DATA
+    #                 data_analyzer = DataAnalyzer(api_key=OPENAI_API_KEY)
+    #                 data_analyzer.show_plots_and_insights(st.session_state.synthetic_data)
+
+    #                 # SEE THE DRIFT IN THE SYNTHETIC DATA
+    #                 if st.button("Run Drift Detection"):
+    #                     drift_progress = st.progress(0)
+    #                     with st.spinner("Running drift detection..."):
+    #                         for i in range(100):  
+    #                             time.sleep(0.02)
+    #                             drift_progress.progress(i + 1)
+    #                         tabular_data_drift_report = drift_detector.detect_tabular_drift(reference_data, 
+    #                                                                                         st.session_state.synthetic_data)
+    #                         tabular_data_drift_report_plot = tabular_data_drift_report.get_html()
+                        
+    #                     if tabular_data_drift_report_plot:
+    #                         st.success("Drift Detection Report Generated!")
+    #                         st.markdown(f"<h3 style='text-align: center;'> Data Drift Report </h3>", unsafe_allow_html=True)
+    #                         st.components.v1.html(tabular_data_drift_report_plot, height=5000)
+    #                         st.divider()
+
+    #                         synthetic_data_csv = st.session_state.synthetic_data.to_csv(index=False)  
+    #                         st.download_button(
+    #                             label="Download Synthetic Data",
+    #                             data=synthetic_data_csv,
+    #                             file_name="synthetic_data.csv",
+    #                             mime="text/csv"
+    #                         )
+
+
 
     elif data_type == "Textual":    
-        uploaded_file = st.file_uploader("Upload Reference CSV for Text Data", type=["csv"])
-        reference_data = None
-        synthetic_data = None
+        if new_flag:
+            uploaded_file = st.file_uploader("Upload Reference CSV for Text Data", type=["csv"])
+            reference_data = None
+            synthetic_data = None
 
-        if uploaded_file is not None:
-            try:
-                reference_data = pd.read_csv(uploaded_file)
-                if reference_data.empty:
-                    st.error("The uploaded CSV file is empty. Please upload a valid CSV with data.")
-                else:
-                    columns = reference_data.columns.tolist()
-                    if not columns:
-                        st.error("No columns found in the uploaded file. Please check your CSV.")
+            if uploaded_file is not None:
+                try:
+                    reference_data = pd.read_csv(uploaded_file)
+                    if reference_data.empty:
+                        st.error("The uploaded CSV file is empty. Please upload a valid CSV with data.")
                     else:
-                        text_column = st.selectbox(
-                            "Select the text data column you want to augment data for", 
-                            tuple(columns)
-                        )
-            except pd.errors.EmptyDataError:
-                st.error("The uploaded file is empty. Please upload a non-empty CSV file.")
-            except pd.errors.ParserError:
-                st.error("Failed to parse the CSV file. Ensure it is formatted correctly.")
-            except Exception as e:
-                st.error(f"An unexpected error occurred: {e}")        
+                        columns = reference_data.columns.tolist()
+                        if not columns:
+                            st.error("No columns found in the uploaded file. Please check your CSV.")
+                        else:
+                            text_column = st.selectbox(
+                                "Select the text data column you want to augment data for", 
+                                tuple(columns)
+                            )
+                except pd.errors.EmptyDataError:
+                    st.error("The uploaded file is empty. Please upload a non-empty CSV file.")
+                except pd.errors.ParserError:
+                    st.error("Failed to parse the CSV file. Ensure it is formatted correctly.")
+                except Exception as e:
+                    st.error(f"An unexpected error occurred: {e}")        
 
-            if text_column:
-                st.session_state.reference_data = reference_data
-                st.dataframe(reference_data)
+                if text_column:
+                    st.session_state.reference_data = reference_data
+                    st.dataframe(reference_data)
 
-                if text_column not in reference_data.columns:
-                    st.error(f"Column '{text_column}' not found in the uploaded CSV.")
-                else:
-                    reference_texts = reference_data[text_column].dropna().tolist()
-                    st.write("Sample Reference Texts:", reference_texts[:5])
+                    if text_column not in reference_data.columns:
+                        st.error(f"Column '{text_column}' not found in the uploaded CSV.")
+                    else:
+                        reference_texts = reference_data[text_column].dropna().tolist()
+                        st.write("Sample Reference Texts:", reference_texts[:5])
 
-                    num_samples = st.number_input("Number of Synthetic Text Samples", min_value=1, value=5)
-                    if st.button("Generate Synthetic Textual Data"):
-                        st.session_state.synthetic_texts = data_gen.generate_textual_data_with_schema(
-                            reference_data, text_column, num_samples
-                        )
-                        synthetic_data = pd.DataFrame(st.session_state.synthetic_texts)
-                        synthetic_data.dropna(inplace=True)
-                        synthetic_data.reset_index(inplace=True, drop=True)
-                        st.session_state.synthetic_data = synthetic_data
-                        st.write("Synthetic Textual Data with Schema:", synthetic_data)
+                        num_samples = st.number_input("Number of Synthetic Text Samples", min_value=1, value=5)
+                        if st.button("Generate Synthetic Textual Data"):
+                            st.session_state.synthetic_texts = data_gen.generate_textual_data_with_schema(
+                                reference_data, text_column, num_samples
+                            )
+                            synthetic_data = pd.DataFrame(st.session_state.synthetic_texts)
+                            synthetic_data.dropna(inplace=True)
+                            synthetic_data.reset_index(inplace=True, drop=True)
+                            st.session_state.synthetic_data = synthetic_data
+                            st.write("Synthetic Textual Data with Schema:", synthetic_data)
+
+        else:
+            uploaded_file = st.file_uploader("Upload Reference CSV for Text Data", type=["csv"])
+            reference_data = None
+            synthetic_data = None
+            if uploaded_file is not None:
+                try:
+                    reference_data = pd.read_csv(uploaded_file)
+                    if reference_data.empty:
+                        st.error("The uploaded CSV file is empty. Please upload a valid CSV with data.")
+                    else:
+                        columns = reference_data.columns.tolist()
+                        if not columns:
+                            st.error("No columns found in the uploaded file. Please check your CSV.")
+                        else:
+                            text_column = st.selectbox(
+                                "Select the text data column you want to augment data for", 
+                                tuple(columns)
+                            )
+                except pd.errors.EmptyDataError:
+                    st.error("The uploaded file is empty. Please upload a non-empty CSV file.")
+                except pd.errors.ParserError:
+                    st.error("Failed to parse the CSV file. Ensure it is formatted correctly.")
+                except Exception as e:
+                    st.error(f"An unexpected error occurred: {e}")        
+                
+                if text_column:
+                    st.session_state.reference_data = reference_data
+                    st.dataframe(reference_data)
+
+                    if text_column not in reference_data.columns:
+                        st.error(f"Column '{text_column}' not found in the uploaded CSV.")
+                    else:
+                        reference_texts = reference_data[text_column].dropna().tolist()
+                        st.write("Sample Reference Texts:", reference_texts[:5])
+
+                        num_samples = st.number_input("Number of Synthetic Text Samples", min_value=1, value=5)
+                        if st.button("Generate Synthetic Textual Data"):
+                            st.session_state.synthetic_texts = data_gen.generate_textual_data("\n".join(reference_texts), num_samples)
+                            synthetic_data = pd.DataFrame(st.session_state.synthetic_texts, columns=[text_column])
+                            synthetic_data.dropna(inplace=True)
+                            synthetic_data.reset_index(inplace=True, drop=True)
+                            st.session_state.synthetic_data = synthetic_data
+                            st.write("Synthetic Textual Data:", synthetic_data)
+
+                if st.session_state.synthetic_data is not None:
+                    if st.button("Run Drift Detection"):
+                        textual_data_drift_preset_report_path, textual_data_embeddings_countour_plots_path, textual_embeddings_drift_mmd_report_path = drift_detector.textual_data_drift_reports(st.session_state.reference_data,
+                                                                                                                                                        st.session_state.synthetic_data, 
+                                                                                                                                                        text_column)
+                        st.success("Drift Detection Report Generated! Download below.")
+                        st.markdown('Data Drift Preset Report:')
+                        display_html_report(textual_data_drift_preset_report_path)
+                        st.markdown('#')
+                        st.markdown('Embeddings Drift Report:')
+                        display_html_report(textual_embeddings_drift_mmd_report_path)
+                        st.markdown('##')
+                        st.image(textual_data_embeddings_countour_plots_path)
+                        
+                        st.markdown('##')
+                        st.markdown(f"<h5 style='text-align: center;'> Understanding the plots </h5>", unsafe_allow_html=True)
+                        text1 = '''
+                                The plots shown represent an embedding drift analysis using a Maximum Mean Discrepancy (MMD) method. The left plot visualizes the distribution of embeddings for the current dataset, while the right plot shows the embeddings for the reference dataset. These embeddings capture the underlying semantic representation of the data.
+                                '''
+                        text2 = '''
+                                When the two plots appear visually similar, it indicates a high contextual similarity between the reference and current datasets. This suggests that the data distribution has remained stable, and no significant drift has occurred, as confirmed by the drift score of 0.0.
+                                '''
+                        st.success(text1)
+                        st.success(text2)
+                        st.download_button("Download Report", textual_data_drift_preset_report_path)
 
 
-    # elif data_type == "Textual":
-    #     uploaded_file = st.file_uploader("Upload Reference CSV for Text Data", type=["csv"])
-    #     reference_data = None
-    #     synthetic_data = None
-    #     if uploaded_file is not None:
-    #         try:
-    #             reference_data = pd.read_csv(uploaded_file)
-    #             if reference_data.empty:
-    #                 st.error("The uploaded CSV file is empty. Please upload a valid CSV with data.")
-    #             else:
-    #                 columns = reference_data.columns.tolist()
-    #                 if not columns:
-    #                     st.error("No columns found in the uploaded file. Please check your CSV.")
-    #                 else:
-    #                     text_column = st.selectbox(
-    #                         "Select the text data column you want to augment data for", 
-    #                         tuple(columns)
-    #                     )
-    #         except pd.errors.EmptyDataError:
-    #             st.error("The uploaded file is empty. Please upload a non-empty CSV file.")
-    #         except pd.errors.ParserError:
-    #             st.error("Failed to parse the CSV file. Ensure it is formatted correctly.")
-    #         except Exception as e:
-    #             st.error(f"An unexpected error occurred: {e}")        
-            
-    #         if text_column:
-    #             st.session_state.reference_data = reference_data
-    #             st.dataframe(reference_data)
 
-    #             if text_column not in reference_data.columns:
-    #                 st.error(f"Column '{text_column}' not found in the uploaded CSV.")
-    #             else:
-    #                 reference_texts = reference_data[text_column].dropna().tolist()
-    #                 st.write("Sample Reference Texts:", reference_texts[:5])
 
-    #                 num_samples = st.number_input("Number of Synthetic Text Samples", min_value=1, value=5)
-    #                 if st.button("Generate Synthetic Textual Data"):
-    #                     st.session_state.synthetic_texts = data_gen.generate_textual_data("\n".join(reference_texts), num_samples)
-    #                     synthetic_data = pd.DataFrame(st.session_state.synthetic_texts, columns=[text_column])
-    #                     synthetic_data.dropna(inplace=True)
-    #                     synthetic_data.reset_index(inplace=True, drop=True)
-    #                     st.session_state.synthetic_data = synthetic_data
-    #                     st.write("Synthetic Textual Data:", synthetic_data)
 
-    #         if st.session_state.synthetic_data is not None:
-    #             if st.button("Run Drift Detection"):
-    #                 textual_data_drift_preset_report_path, textual_data_embeddings_countour_plots_path, textual_embeddings_drift_mmd_report_path = drift_detector.textual_data_drift_reports(st.session_state.reference_data,
-    #                                                                                                                                                 st.session_state.synthetic_data, 
-    #                                                                                                                                                 text_column)
-    #                 st.success("Drift Detection Report Generated! Download below.")
-    #                 st.markdown('Data Drift Preset Report:')
-    #                 display_html_report(textual_data_drift_preset_report_path)
-    #                 st.markdown('#')
-    #                 st.markdown('Embeddings Drift Report:')
-    #                 display_html_report(textual_embeddings_drift_mmd_report_path)
-    #                 st.markdown('##')
-    #                 st.image(textual_data_embeddings_countour_plots_path)
-    #                 st.download_button("Download Report", textual_data_drift_preset_report_path)
+
+
+
 
 
 
@@ -220,16 +393,16 @@ with tab2:
     if 'step' not in st.session_state:
         st.session_state.step = 'input_prompt'
 
-    # Streamlit UI
     st.title("Metadata-Based Synthetic Data Generation")
 
-    # Step 1: User Input for Dataset Description
+    # STEP 1: TAKING USER NATURAL LANGUAGE INPUT 
     if st.session_state.step == 'input_prompt':
         user_prompt = st.text_area(
             "Describe your dataset requirements:",
             placeholder="e.g., I need employee data with employee_id, name, role, designation, and band."
         )
 
+        # STEP 2: GENERATE THE SCHEMA BASED ON USER INPUT
         if st.button("Generate Metadata Schema"):
             if user_prompt.strip() == "":
                 st.warning("Please enter a dataset description.")
@@ -241,7 +414,8 @@ with tab2:
                         st.session_state.step = 'confirm_schema'
                         st.rerun()
 
-    # Step 2: Schema Confirmation
+
+    # Step 3: SCHEMA CONFIRMATION
     elif st.session_state.step == 'confirm_schema':
         st.success("Generated Metadata Schema:")
         st.json(st.session_state.metadata_schema)
@@ -257,7 +431,8 @@ with tab2:
             st.session_state.step = 'set_ranges'
             st.rerun()
 
-    # Step 3: Field Range Selection
+
+    # STEP 4: FILLING THE SCHEMA FIELDS
     elif st.session_state.step == 'set_ranges':
         st.header("Set Field Ranges/Constraints")
 
@@ -288,41 +463,33 @@ with tab2:
         num_records = st.number_input("Number of records to generate", min_value=1, value=10, step=1, key='num_records')
 
         if st.button("Proceed to Data Generation"):
-            # Use the widget value directly, no need to modify session state here
             st.session_state.step = 'generate_data'
             st.rerun()
 
-    # Step 4: Generate and Display Data using LLM
+
+    # STEP 5: GENERATE THE SYNTHETIC DATA 
     elif st.session_state.step == 'generate_data':
         st.header("Synthetic Data Preview")
 
         with st.spinner("Generating Synthetic Data..."):
-            # Send data to LLM for synthetic data generation
             synthetic_data_response = data_generator_using_meta_info.generate_synthetic_data_llm(
                 st.session_state.final_schema,
                 st.session_state.field_ranges,
-                st.session_state.num_records  # Use the num_records directly
+                st.session_state.num_records
             )
 
             synthetic_data_response_lines = synthetic_data_response.split("\n")
             csv_filename = "./outputs/synthetic_data/using_metadata/tabular/synthetic_data.csv"
             with open(csv_filename, mode="w", newline='') as file:
-                writer = csv.writer(file)
-                
-                # Write the header (first line in the output)
-                writer.writerow(synthetic_data_response_lines[0].split(","))
-                
-                # Write the records (remaining lines in the output)
+                writer = csv.writer(file)                
+                writer.writerow(synthetic_data_response_lines[0].split(","))                
                 for line in synthetic_data_response_lines[1:]:
                     writer.writerow(line.split(","))
 
-            # Load the CSV into a DataFrame using pandas
-            synthetic_data_df = pd.read_csv(csv_filename)
 
-            # Display the CSV data in Streamlit
+            synthetic_data_df = pd.read_csv(csv_filename)
             st.dataframe(synthetic_data_df)
 
-            # Optionally, allow the user to download the generated CSV
             st.download_button(
                 label="Download CSV",
                 data=synthetic_data_df.to_csv(index=False),
