@@ -91,6 +91,7 @@ with tab1:
                             time.sleep(0.02) 
                             progress.progress(i + 1)
                     st.session_state.synthetic_data = data_gen.generate_tabular_data(reference_data, num_rows)
+                    st.session_state.synthetic_data.columns = reference_data.columns[:len(reference_data.columns)]
                     st.session_state.synthetic_data_generated = True
                     st.success("Synthetic Data Generated Successfully!")
                     st.write("Synthetic Data Preview:", st.session_state.synthetic_data.head(10))
