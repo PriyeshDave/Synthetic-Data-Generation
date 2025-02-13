@@ -1,1 +1,2 @@
-source /Users/apple/Documents/Priyesh/VirtualEnvs/syn_data_gen_venv/bin/activate
+source /Users/apple/Documents/Priyesh/VirtualEnvs/Synthetic_Data_Generation_Venvs/synthetic_data_generation_genai_venv/bin/activate
+/Users/apple/Documents/Priyesh/VirtualEnvs/Synthetic_Data_Generation_Venvs/synthetic_data_generation_genai_venv/bin/python3.9
